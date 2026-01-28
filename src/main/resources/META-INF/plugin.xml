@@ -3,7 +3,7 @@
     <id>com.ch.novelreader</id>
 
     <!-- 插件名称：在插件市场/IDE 插件列表显示 -->
-    <name>Novel Reader</name>
+    <name>Scrolling Novel Reader</name>
 
     <!-- 版本：建议用 Gradle patchPluginXml 注入，这里也可写一个默认值 -->
     <version>1.0.0</version>
@@ -19,34 +19,41 @@
 
     <!-- 插件描述：插件市场展示（HTML，注意放在 CDATA 里） -->
     <description><![CDATA[
-    <h2>Novel Reader（IDEA 小说阅读器）</h2>
-    <p>在 IntelliJ IDEA 内的工具窗口中阅读本地 txt 小说，支持章节目录、滚轮阅读、上下自动加载相邻章节与阅读进度记忆。</p>
+Novel Reader is an IntelliJ IDEA plugin that allows you to read local TXT novels directly inside the IDE with a smooth scrolling experience and automatic chapter loading.
 
-    <h3>主要功能</h3>
-    <ul>
-      <li>Tool Window 阅读区：正常滚轮上下滚动</li>
-      <li>章节目录：自动识别章节标题，可显示/隐藏</li>
-      <li>连续阅读：到顶持续上滚自动拼接上一章；到底持续下滚自动拼接下一章</li>
-      <li>滑动窗口：只保留最近 N 章，避免越读越卡</li>
-      <li>阅读进度记忆：自动记录章节 + 章节内位置</li>
-      <li>设置：选择本地小说文件、设置字号</li>
-    </ul>
+<h2>Novel Reader（IDEA 小说阅读器）</h2>
+<p>
+在 IntelliJ IDEA 内的工具窗口中阅读本地 TXT 小说，支持章节目录、滚轮阅读、
+上下持续滚动自动加载相邻章节，并自动记忆阅读进度。
+</p>
 
-    <h3>使用方法</h3>
-    <ol>
-      <li>View → Tool Windows → Novel Reader</li>
-      <li>Settings/Preferences → Tools → Novel Reader</li>
-      <li>选择本地 txt 文件并开始阅读</li>
-    </ol>
-  ]]></description>
+<h3>Key Features</h3>
+<ul>
+  <li>Tool Window based novel reader inside IntelliJ IDEA</li>
+  <li>Automatic chapter detection and chapter list navigation</li>
+  <li>Continuous reading by scrolling up and down</li>
+  <li>Sliding window mechanism to prevent performance degradation</li>
+  <li>Reading progress persistence (chapter + position)</li>
+  <li>Configurable font size and novel file selection</li>
+</ul>
+
+<h3>Usage</h3>
+<ol>
+  <li>Open the Novel Reader tool window</li>
+  <li>Select a local TXT novel file in Settings</li>
+  <li>Scroll to read, chapters load automatically</li>
+</ol>
+]]></description>
+
 
     <!-- 更新说明：插件市场展示（HTML） -->
     <change-notes><![CDATA[
-    <h3>1.0.0</h3>
-    <ul>
-      <li>初始发布：ToolWindow 阅读器、章节解析、上下自动加载、阅读进度记忆、设置页</li>
-    </ul>
-  ]]></change-notes>
+<h3>1.0.0</h3>
+<ul>
+  <li>Initial release of IDEA Novel Reader</li>
+</ul>
+]]></change-notes>
+
 
     <!-- 图标：Marketplace / IDE 插件列表建议提供（见下方说明） -->
     <!-- 新版 Gradle 插件/Marketplace 推荐在 resources 里放 pluginIcon.svg / pluginIcon_dark.svg -->

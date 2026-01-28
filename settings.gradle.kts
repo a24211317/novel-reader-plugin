@@ -1,1 +1,1 @@
-rootProject.name = "novel-reader-plugin"
+rootProject.name = "scrolling-novel-reader"
