@@ -48,6 +48,10 @@ Novel Reader is an IntelliJ IDEA plugin that allows you to read local TXT novels
 
     <!-- 更新说明：插件市场展示（HTML） -->
     <change-notes><![CDATA[
+<h3>1.0.1</h3>
+<ul>
+  <li>Fix the path error to enable usage.</li>
+</ul>
 <h3>1.0.0</h3>
 <ul>
   <li>Initial release of IDEA Novel Reader</li>
@@ -65,16 +69,16 @@ Novel Reader is an IntelliJ IDEA plugin that allows you to read local TXT novels
         <toolWindow
                 id="Novel Reader"
                 anchor="right"
-                factoryClass="com.example.novelreader.NovelToolWindowFactory"
+                factoryClass="com.ch.novelreader.NovelReaderToolWindowFactory"
                 icon="/icons/book.svg"
                 secondary="false"
                 canCloseContents="false"/>
 
         <!-- 2) 设置页：Settings/Preferences → Tools → Novel Reader -->
         <applicationConfigurable
-                id="com.example.novelreader.settings"
-                displayName="Novel Reader"
-                groupId="tools"
+                id="com.ch.novelreader.settings"
+                displayName="Scrolling Novel Reader"
+                groupId="other"
                 instance="com.ch.novelreader.NovelReaderConfigurable"/>
 
         <!-- 3) 持久化状态：保存文件路径/字号/阅读位置等 -->
