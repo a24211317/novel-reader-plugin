@@ -2,6 +2,7 @@
 
 一个运行在 IntelliJ IDEA 内的本地小说阅读插件，在 IDE 中提供类似控制台的阅读体验，适合在编码间隙阅读本地 txt 小说。
 
+现已发布至IDEA插件市场 搜索Scrolling Novel Reader即可安装   https://plugins.jetbrains.com/plugin/29966-scrolling-novel-reader
 ---
 
 ## ✨ 功能特性
