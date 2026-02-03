@@ -1,0 +1,93 @@
+<idea-plugin>
+    <!-- 插件唯一 ID：发布到插件市场后不可随意改动 -->
+    <id>com.ch.novelreader</id>
+
+    <!-- 插件名称：在插件市场/IDE 插件列表显示 -->
+    <name>Scrolling Novel Reader</name>
+
+    <!-- 版本：建议用 Gradle patchPluginXml 注入，这里也可写一个默认值 -->
+    <version>1.0.2</version>
+
+    <!-- 兼容性：建议用 patchPluginXml 注入 since/until，避免手动维护 -->
+    <idea-version since-build="243" until-build="243.*"/>
+
+    <!-- 依赖：最小依赖 platform -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- 供应商信息（插件市场展示） -->
+    <vendor email="chenghong8682@gmail.com" >ch</vendor>
+
+    <!-- 插件描述：插件市场展示（HTML，注意放在 CDATA 里） -->
+    <description><![CDATA[
+Novel Reader is an IntelliJ IDEA plugin that allows you to read local TXT novels directly inside the IDE with a smooth scrolling experience and automatic chapter loading.
+
+<h2>Novel Reader（IDEA 小说阅读器）</h2>
+<p>
+在 IntelliJ IDEA 内的工具窗口中阅读本地 TXT 小说，支持章节目录、滚轮阅读、
+上下持续滚动自动加载相邻章节，并自动记忆阅读进度。
+</p>
+
+<h3>Key Features</h3>
+<ul>
+  <li>Tool Window based novel reader inside IntelliJ IDEA</li>
+  <li>Automatic chapter detection and chapter list navigation</li>
+  <li>Continuous reading by scrolling up and down</li>
+  <li>Sliding window mechanism to prevent performance degradation</li>
+  <li>Reading progress persistence (chapter + position)</li>
+  <li>Configurable font size and novel file selection</li>
+</ul>
+
+<h3>Usage</h3>
+<ol>
+  <li>Open the Novel Reader tool window</li>
+  <li>Select a local TXT novel file in Settings</li>
+  <li>Scroll to read, chapters load automatically</li>
+</ol>
+]]></description>
+
+
+    <!-- 更新说明：插件市场展示（HTML） -->
+    <change-notes><![CDATA[
+<h3>1.0.2</h3>
+<ul>
+  <li>Fix the positioning issue.</li>
+</ul>
+<h3>1.0.1</h3>
+<ul>
+  <li>Fix the path error to enable usage.</li>
+</ul>
+<h3>1.0.0</h3>
+<ul>
+  <li>Initial release of IDEA Novel Reader</li>
+</ul>
+]]></change-notes>
+
+
+    <!-- 图标：Marketplace / IDE 插件列表建议提供（见下方说明） -->
+    <!-- 新版 Gradle 插件/Marketplace 推荐在 resources 里放 pluginIcon.svg / pluginIcon_dark.svg -->
+    <!-- 这里不需要显式声明图标，IDE 会自动识别：resources/META-INF/pluginIcon.svg -->
+
+    <extensions defaultExtensionNs="com.intellij">
+
+        <!-- 1) Tool Window：左/右侧边栏出现 Novel Reader -->
+        <toolWindow
+                id="Novel Reader"
+                anchor="right"
+                factoryClass="com.ch.novelreader.NovelReaderToolWindowFactory"
+                icon="/icons/book.svg"
+                secondary="false"
+                canCloseContents="false"/>
+
+        <!-- 2) 设置页：Settings/Preferences → Tools → Novel Reader -->
+        <applicationConfigurable
+                id="com.ch.novelreader.settings"
+                displayName="Scrolling Novel Reader"
+                groupId="other"
+                instance="com.ch.novelreader.NovelReaderConfigurable"/>
+
+        <!-- 3) 持久化状态：保存文件路径/字号/阅读位置等 -->
+        <applicationService serviceImplementation="com.ch.novelreader.NovelReaderState"/>
+
+    </extensions>
+
+</idea-plugin>

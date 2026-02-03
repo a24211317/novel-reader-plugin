@@ -1,5 +1,6 @@
 package com.ch.novelreader
 
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -29,6 +30,7 @@ import javax.swing.Timer
 import javax.swing.event.ListSelectionEvent
 import javax.swing.text.BadLocationException
 import javax.swing.text.Document
+import kotlin.io.path.exists
 
 data class Chapter(val title: String, val file: Path)
 
@@ -165,6 +167,8 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     private fun splitIntoChaptersAsync(novelPath: Path, charset: Charset) {
         cacheDir = Files.createTempDirectory("novel_reader_chapters_")
+        val root = Path.of(PathManager.getSystemPath(), "novel-reader", "chapters")
+        if (!root.exists()) Files.createDirectories(root)
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "解析章节", false) {
             override fun run(indicator: ProgressIndicator) {
@@ -238,18 +242,15 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
             return
         }
 
-        // 点击紧挨着下一章：追加后跳到标题
         if (loadedEnd >= 0 && index == loadedEnd + 1) {
-            appendChapter(index, jumpToTitle = true, keepScroll = false)
+            appendChapter(index, jumpToTitle = true, keepReadingAnchor = false)
             return
         }
-        // 点击紧挨着上一章：前插后跳到标题
         if (loadedStart >= 0 && index == loadedStart - 1) {
             prependChapter(index, jumpToTitle = true)
             return
         }
 
-        // 远处：从该章重新开始
         startFromChapter(index, tryRestorePos = false)
     }
 
@@ -300,19 +301,33 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         loadedEnd = index
         syncListSelection(index)
 
-        loadAndAppendIntoEnd(index, keepScrollValue = null, jumpToTitle = true, tryRestorePos = tryRestorePos)
+        loadAndAppendIntoEnd(
+            index = index,
+            oldTopDocOffset = null,
+            jumpToTitle = true,
+            tryRestorePos = tryRestorePos
+        )
     }
 
-    /** 向下拼接：把 index 追加到末尾；可选择保持滚动或跳标题 */
-    private fun appendChapter(index: Int, jumpToTitle: Boolean, keepScroll: Boolean) {
+    /**
+     * ✅ 修复点：向下追加时如果要“保持当前位置”，不要用 scrollbar.value，
+     * 记录 viewport 顶部 docOffset 作为锚点，追加+裁剪后再对齐回去。
+     */
+    private fun appendChapter(index: Int, jumpToTitle: Boolean, keepReadingAnchor: Boolean) {
         if (loadedEnd < 0) return
         if (index != loadedEnd + 1) return
 
-        val keep = if (keepScroll) textScroll.verticalScrollBar.value else null
+        val oldTop = if (keepReadingAnchor && !jumpToTitle) topVisibleDocOffset() else null
+
         loadedEnd = index
         syncListSelection(index)
 
-        loadAndAppendIntoEnd(index, keepScrollValue = keep, jumpToTitle = jumpToTitle, tryRestorePos = false)
+        loadAndAppendIntoEnd(
+            index = index,
+            oldTopDocOffset = oldTop,
+            jumpToTitle = jumpToTitle,
+            tryRestorePos = false
+        )
     }
 
     /** 向上拼接：把 index 插到最前面，并保持当前阅读位置不跳 */
@@ -320,7 +335,6 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         if (loadedStart < 0) return
         if (index != loadedStart - 1) return
 
-        // 记住当前 viewport 顶部对应的 docOffset，用来保持位置
         val oldTop = topVisibleDocOffset() ?: 0
 
         loadedStart = index
@@ -333,7 +347,7 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     private fun loadAndAppendIntoEnd(
         index: Int,
-        keepScrollValue: Int?,
+        oldTopDocOffset: Int?,
         jumpToTitle: Boolean,
         tryRestorePos: Boolean
     ) {
@@ -361,11 +375,21 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
                         chapterStartOffsets[index] = start
                         chapterEndOffsets[index] = end
 
-                        shrinkFromTopIfNeeded()
+                        // ✅ shrink 可能会从顶部裁剪，返回 removedLen
+                        val removedLen = shrinkFromTopIfNeeded()
 
+                        // ✅ 追加后的定位策略
                         when {
-                            jumpToTitle -> jumpToOffsetStable(chapterStartOffsets[index].coerceAtLeast(0))
-                            keepScrollValue != null -> textScroll.verticalScrollBar.value = keepScrollValue
+                            jumpToTitle -> {
+                                // 标题 offset 也要考虑被裁剪的长度
+                                val titleOffset = (chapterStartOffsets[index]).coerceAtLeast(0)
+                                jumpToOffsetStable(titleOffset)
+                            }
+                            oldTopDocOffset != null -> {
+                                // 维持阅读锚点：oldTop 在裁剪后应减去 removedLen
+                                val newTop = (oldTopDocOffset - removedLen).coerceAtLeast(0)
+                                scrollTopToDocOffsetStable(newTop)
+                            }
                         }
 
                         if (tryRestorePos) restoreReadingPosIfMatches(index)
@@ -402,7 +426,6 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
                             append("\n\n")
                         }
 
-                        // 插入前插长度
                         val insertLen = chunk.length
 
                         try {
@@ -411,21 +434,17 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
                             return@invokeLater
                         }
 
-                        // 所有已加载章节 offsets 整体后移 insertLen
                         for (i in (index + 1)..loadedEnd) {
                             if (chapterStartOffsets[i] >= 0) chapterStartOffsets[i] += insertLen
                             if (chapterEndOffsets[i] >= 0) chapterEndOffsets[i] += insertLen
                         }
 
-                        // 设置新章节 offsets
                         chapterStartOffsets[index] = 0
                         chapterEndOffsets[index] = insertLen
 
-                        // ✅ 保持原阅读位置：原来顶部 offset 现在变成 oldTop + insertLen
                         if (!jumpToTitle) {
                             scrollTopToDocOffsetStable(oldTopDocOffset + insertLen)
                         } else {
-                            // 用户主动选择该章/上一章：跳到标题
                             jumpToOffsetStable(0)
                         }
 
@@ -461,7 +480,6 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         } catch (_: Exception) {}
     }
 
-    /** 把 viewport 顶部对齐到某个 docOffset（用于“向上 prepend 后保持位置”） */
     private fun scrollTopToDocOffsetStable(docOffset: Int) {
         val safe = docOffset.coerceIn(0, textArea.document.length)
         SwingUtilities.invokeLater {
@@ -470,10 +488,8 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
                     val r = textArea.modelToView2D(safe)
                     val y = r.bounds.y
                     val vp = textScroll.viewport
-                    val p = Point(vp.viewPosition.x, y)
-                    vp.viewPosition = p
+                    vp.viewPosition = Point(vp.viewPosition.x, y)
                 } catch (_: Exception) {
-                    // 兜底：至少保证可见
                     jumpToOffsetOnce(safe)
                 }
             }
@@ -482,9 +498,14 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     // ---------------- sliding window shrink (both directions) ----------------
 
-    /** 当向下追加导致超过窗口大小：从顶部裁剪 */
-    private fun shrinkFromTopIfNeeded() {
-        if (loadedStart < 0 || loadedEnd < 0) return
+    /**
+     * ✅ 修复点：从顶部裁剪时，返回本次裁剪掉的字符长度 removedLen，
+     * 让“保持阅读锚点”能把 oldTopDocOffset 同步减去 removedLen。
+     */
+    private fun shrinkFromTopIfNeeded(): Int {
+        if (loadedStart < 0 || loadedEnd < 0) return 0
+        var totalRemoved = 0
+
         while ((loadedEnd - loadedStart + 1) > MAX_KEEP_CHAPTERS) {
             val removeChapter = loadedStart
             val end = chapterEndOffsets.getOrNull(removeChapter) ?: -1
@@ -497,10 +518,12 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
             try {
                 textArea.document.remove(0, removeLen)
             } catch (_: BadLocationException) {
-                return
+                return totalRemoved
             } catch (_: Exception) {
-                return
+                return totalRemoved
             }
+
+            totalRemoved += removeLen
 
             chapterStartOffsets[removeChapter] = -1
             chapterEndOffsets[removeChapter] = -1
@@ -515,9 +538,10 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
             loadedStart++
         }
+
+        return totalRemoved
     }
 
-    /** 当向上 prepend 导致超过窗口大小：从底部裁剪 */
     private fun shrinkFromBottomIfNeeded() {
         if (loadedStart < 0 || loadedEnd < 0) return
         while ((loadedEnd - loadedStart + 1) > MAX_KEEP_CHAPTERS) {
@@ -619,10 +643,8 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     private fun installSustainedScrollAutoLoad() {
         val wheelListener = MouseWheelListener { e: MouseWheelEvent ->
-            // 只监听 scrollPane，避免破坏默认滚动
             val down = e.preciseWheelRotation > 0.0
             val up = e.preciseWheelRotation < 0.0
-
             SwingUtilities.invokeLater {
                 if (down) onDownWheel()
                 if (up) onUpWheel()
@@ -633,7 +655,6 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     private fun onDownWheel() {
         if (!isAtBottom()) {
-            // 不在底部就重置底部计数
             downCountAtBottom = 0
             return
         }
@@ -648,8 +669,8 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         if (downCountAtBottom >= AUTO_WHEEL_COUNT) {
             downCountAtBottom = 0
             val next = loadedEnd + 1
-            // 自动向下：追加并保持当前位置
-            appendChapter(next, jumpToTitle = false, keepScroll = true)
+            // ✅ 自动向下：追加并保持阅读锚点（不跳标题）
+            appendChapter(next, jumpToTitle = false, keepReadingAnchor = true)
         }
     }
 
@@ -669,7 +690,6 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         if (upCountAtTop >= AUTO_WHEEL_COUNT) {
             upCountAtTop = 0
             val prev = loadedStart - 1
-            // 自动向上：前插并保持当前位置
             prependChapter(prev, jumpToTitle = false)
         }
     }
