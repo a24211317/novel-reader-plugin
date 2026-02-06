@@ -10,12 +10,15 @@ import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
 import java.awt.BorderLayout
 import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Point
+import java.awt.event.ActionEvent
 import java.awt.event.MouseWheelEvent
 import java.awt.event.MouseWheelListener
+import java.awt.event.KeyEvent
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -23,7 +26,10 @@ import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.AbstractListModel
+import javax.swing.AbstractAction
+import javax.swing.JComponent
 import javax.swing.JToggleButton
+import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
@@ -44,6 +50,14 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
     }
     private val textScroll = JBScrollPane(textArea).apply {
         isWheelScrollingEnabled = true
+    }
+
+    // -------- UI: bottom line mode --------
+    private val singleLineField = JBTextField().apply {
+        isEditable = false
+    }
+    private val bottomLinePanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        add(singleLineField, BorderLayout.CENTER)
     }
 
     // -------- UI: left chapters --------
@@ -101,6 +115,8 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
     private var chapterEndOffsets: IntArray = IntArray(0) { -1 }
 
     private var suppressSelection = false
+    private var bottomMode = false
+    private var pendingLineSkipDir = 0
 
     // -------- Reading position persistence (throttled) --------
     private var saveTimer: Timer? = null
@@ -109,6 +125,7 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         val root = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             add(topLeftBar, BorderLayout.NORTH)
             add(splitter, BorderLayout.CENTER)
+            add(bottomLinePanel, BorderLayout.SOUTH)
         }
         add(root, BorderLayout.CENTER)
 
@@ -120,6 +137,10 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
             splitter.repaint()
         }
 
+        textArea.addCaretListener {
+            if (bottomMode) updateSingleLineFromCaret()
+        }
+
         project.messageBus.connect().subscribe(ReaderTopics.SETTINGS_CHANGED, object : ReaderSettingsListener {
             override fun settingsChanged() {
                 refreshFromSettings()
@@ -128,12 +149,15 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
         installSustainedScrollAutoLoad()
         installReadingPositionSaver()
+        installLineModeKeyBindings()
         refreshFromSettings()
     }
 
     fun refreshFromSettings() {
         val s = NovelReaderState.getInstance().state
         textArea.font = Font(Font.SANS_SERIF, Font.PLAIN, s.fontSize)
+        singleLineField.font = textArea.font
+        applyDisplayMode(s.showInBottomBar)
 
         val path = s.novelFilePath.trim()
         if (path.isBlank()) {
@@ -161,6 +185,27 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         setUiText("正在分析章节...\n文件：${f.absolutePath}\n大小：${f.length() / 1024} KB")
 
         splitIntoChaptersAsync(f.toPath(), Charsets.UTF_8)
+    }
+
+    private fun applyDisplayMode(showBottom: Boolean) {
+        if (bottomMode == showBottom) return
+        bottomMode = showBottom
+
+        topLeftBar.isVisible = !showBottom
+        splitter.isVisible = !showBottom
+        splitter.firstComponent.isVisible = if (showBottom) false else btnToggleCatalog.isSelected
+        bottomLinePanel.isVisible = showBottom
+
+        textArea.lineWrap = !showBottom
+        textArea.wrapStyleWord = !showBottom
+
+        if (showBottom) {
+            updateSingleLineFromCaret()
+            SwingUtilities.invokeLater { singleLineField.requestFocusInWindow() }
+        }
+
+        revalidate()
+        repaint()
     }
 
     // ---------------- splitting ----------------
@@ -266,7 +311,11 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
     private fun currentChapterIndexFromView(): Int {
         if (loadedStart < 0 || loadedEnd < 0) return chapterList.selectedIndex.coerceAtLeast(0)
-        val docOffset = topVisibleDocOffset() ?: return chapterList.selectedIndex.coerceAtLeast(0)
+        val docOffset = if (bottomMode) {
+            textArea.caretPosition
+        } else {
+            topVisibleDocOffset()
+        } ?: return chapterList.selectedIndex.coerceAtLeast(0)
 
         for (i in loadedStart..loadedEnd) {
             val s = chapterStartOffsets.getOrNull(i) ?: -1
@@ -396,6 +445,10 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
                         resetAutoCounters()
                         scheduleSaveReadingPos()
+                        if (bottomMode) updateSingleLineFromCaret()
+                        if (bottomMode && pendingLineSkipDir != 0) {
+                            handlePendingLineSkip()
+                        }
                     }
                 } catch (e: Exception) {
                     setUiText("读取章节失败：${e.message}")
@@ -452,6 +505,10 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
 
                         resetAutoCounters()
                         scheduleSaveReadingPos()
+                        if (bottomMode) updateSingleLineFromCaret()
+                        if (bottomMode && pendingLineSkipDir != 0) {
+                            handlePendingLineSkip()
+                        }
                     }
                 } catch (e: Exception) {
                     setUiText("读取章节失败：${e.message}")
@@ -617,8 +674,12 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         val start = chapterStartOffsets.getOrNull(idx) ?: -1
         if (start < 0) return
 
-        val top = topVisibleDocOffset() ?: return
-        val inChapter = (top - start).coerceAtLeast(0)
+        val baseOffset = if (bottomMode) {
+            textArea.caretPosition
+        } else {
+            topVisibleDocOffset() ?: return
+        }
+        val inChapter = (baseOffset - start).coerceAtLeast(0)
 
         val st = NovelReaderState.getInstance().state
         st.lastChapterIndex = idx
@@ -715,6 +776,118 @@ class ReaderPanel(private val project: Project) : JBPanel<ReaderPanel>(BorderLay
         SwingUtilities.invokeLater {
             textArea.text = text
             textArea.caretPosition = 0
+            if (bottomMode) updateSingleLineFromCaret()
+        }
+    }
+
+    // ---------------- bottom line mode ----------------
+
+    private fun installLineModeKeyBindings() {
+        val im = singleLineField.getInputMap(JComponent.WHEN_FOCUSED)
+        val am = singleLineField.actionMap
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "line-up")
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "line-down")
+
+        am.put("line-up", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                moveLine(-1)
+            }
+        })
+        am.put("line-down", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                moveLine(1)
+            }
+        })
+    }
+
+    private fun moveLine(delta: Int) {
+        if (!bottomMode) return
+        val docLen = textArea.document.length
+        if (docLen <= 0) return
+
+        val caret = textArea.caretPosition.coerceIn(0, docLen)
+        val currentLine = try { textArea.getLineOfOffset(caret) } catch (_: Exception) { 0 }
+        val targetLine = currentLine + delta
+
+        val nextNonEmpty = findNextNonEmptyLine(targetLine, delta)
+        if (nextNonEmpty >= 0) {
+            val offset = try { textArea.getLineStartOffset(nextNonEmpty) } catch (_: Exception) { caret }
+            textArea.caretPosition = offset
+            updateSingleLineFromCaret()
+            scheduleSaveReadingPos()
+            return
+        }
+
+        when {
+            targetLine < 0 -> {
+                if (loadedStart > 0) {
+                    val prev = loadedStart - 1
+                    pendingLineSkipDir = -1
+                    prependChapter(prev, jumpToTitle = true)
+                }
+            }
+            targetLine >= textArea.lineCount -> {
+                if (loadedEnd + 1 < chapterModel.getSize()) {
+                    val next = loadedEnd + 1
+                    pendingLineSkipDir = 1
+                    appendChapter(next, jumpToTitle = true, keepReadingAnchor = false)
+                }
+            }
+        }
+    }
+
+    private fun updateSingleLineFromCaret() {
+        if (!bottomMode) return
+        val docLen = textArea.document.length
+        if (docLen <= 0) {
+            singleLineField.text = ""
+            return
+        }
+        val caret = textArea.caretPosition.coerceIn(0, docLen)
+        val line = try { textArea.getLineOfOffset(caret) } catch (_: Exception) { 0 }
+        val start = try { textArea.getLineStartOffset(line) } catch (_: Exception) { 0 }
+        val end = try { textArea.getLineEndOffset(line) } catch (_: Exception) { docLen }
+        val raw = try { textArea.document.getText(start, (end - start).coerceAtLeast(0)) } catch (_: Exception) { "" }
+        singleLineField.text = raw.trimEnd('\n', '\r')
+    }
+
+    private fun findNextNonEmptyLine(startLine: Int, delta: Int): Int {
+        if (delta == 0) return -1
+        val lineCount = textArea.lineCount
+        if (lineCount <= 0) return -1
+
+        var line = startLine
+        while (line in 0 until lineCount) {
+            val start = try { textArea.getLineStartOffset(line) } catch (_: Exception) { return -1 }
+            val end = try { textArea.getLineEndOffset(line) } catch (_: Exception) { return -1 }
+            val raw = try { textArea.document.getText(start, (end - start).coerceAtLeast(0)) } catch (_: Exception) { "" }
+            if (raw.isNotBlank()) return line
+            line += delta
+        }
+        return -1
+    }
+
+    private fun handlePendingLineSkip() {
+        val dir = pendingLineSkipDir
+        pendingLineSkipDir = 0
+        if (dir > 0) {
+            val line = findNextNonEmptyLine(0, 1)
+            if (line >= 0) {
+                val offset = try { textArea.getLineStartOffset(line) } catch (_: Exception) { 0 }
+                textArea.caretPosition = offset
+                updateSingleLineFromCaret()
+                scheduleSaveReadingPos()
+            }
+        } else if (dir < 0) {
+            val lastLine = textArea.lineCount - 1
+            val line = findNextNonEmptyLine(lastLine, -1)
+            if (line >= 0) {
+                val offset = try { textArea.getLineStartOffset(line) } catch (_: Exception) { 0 }
+                textArea.caretPosition = offset
+                updateSingleLineFromCaret()
+                scheduleSaveReadingPos()
+            }
         }
     }
 

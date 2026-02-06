@@ -15,7 +15,8 @@ class NovelReaderState : PersistentStateComponent<NovelReaderState.State> {
         var novelFilePath: String = "",
         var fontSize: Int = 16,
         var lastChapterIndex: Int = 0,
-        var lastOffsetInChapter: Int = 0
+        var lastOffsetInChapter: Int = 0,
+        var showInBottomBar: Boolean = false
     )
 
     private var myState = State()

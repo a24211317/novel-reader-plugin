@@ -6,7 +6,7 @@
     <name>Scrolling Novel Reader</name>
 
     <!-- 版本：建议用 Gradle patchPluginXml 注入，这里也可写一个默认值 -->
-    <version>1.0.0</version>
+    <version>1.0.3</version>
 
     <!-- 兼容性：建议用 patchPluginXml 注入 since/until，避免手动维护 -->
     <idea-version since-build="243" until-build="243.*"/>
@@ -47,7 +47,16 @@ Novel Reader is an IntelliJ IDEA plugin that allows you to read local TXT novels
 
 
     <!-- 更新说明：插件市场展示（HTML） -->
-    <change-notes><![CDATA[
+<change-notes><![CDATA[
+<h3>1.0.3</h3>
+<ul>
+  <li>Add bottom area single-line reading mode with up/down line switching.</li>
+  <li>Persist reading position correctly in single-line mode.</li>
+</ul>
+<h3>1.0.2</h3>
+<ul>
+  <li>Fix the positioning issue.</li>
+</ul>
 <h3>1.0.1</h3>
 <ul>
   <li>Fix the path error to enable usage.</li>
